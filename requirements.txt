@@ -1,0 +1,14 @@
+# -------- ETL --------
+pandas==2.3.3
+numpy==2.3.3
+python-dateutil==2.9.0.post0
+polars==1.34.0
+tqdm==4.67.1
+pytest==8.3.3
+
+# -------- Stats (基礎統計與檢驗 + 多峰性) --------
+scipy==1.16.2
+statsmodels==0.14.5
+scikit-learn==1.7.2
+KDEpy==1.1.12
+diptest==0.10.0
