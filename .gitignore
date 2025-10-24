@@ -209,3 +209,9 @@ __marimo__/
 # Data
 .parquet
 .csv
+data/raw/uk_retail_transactions.csv
+.gitignore
+data/.DS_Store
+.gitignore
+data/raw/.DS_Store
+.DS_Store
