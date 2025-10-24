@@ -1,6 +1,4 @@
-from __future__ import annotations
 from typing import Iterable, Optional, Tuple, Dict, Any, List
-
 import numpy as np
 import pandas as pd
 from scipy import stats, signal
@@ -27,7 +25,7 @@ def _iqr(x: np.ndarray) -> float:
 
 
 def _coefficient_of_variation(x: np.ndarray) -> float:
-    """Coefficient of Variation (std / mean). 若 mean=0，回傳 NaN。"""
+    """Coefficient of Variation (std / mean). 若 mean=0, 回傳 NaN。"""
     m = np.nanmean(x)
     s = np.nanstd(x, ddof=1)
     return float(s / m) if m not in (0.0, np.nan) else np.nan
@@ -35,8 +33,10 @@ def _coefficient_of_variation(x: np.ndarray) -> float:
 
 def _shapiro_p(x: np.ndarray, max_n: int = 5000, random_state: int = 42) -> float:
     """
-    Shapiro–Wilk 常態性檢定的 p-value。
-    Shapiro 在 n>5000 時官方不建議；此處自動下採樣到 max_n。
+    Shapiro-Wilk 常態性檢定的 p-value. 處理單峰的常態檢定
+    H0: 資料來自常態分佈。
+    H1: 資料不來自常態分佈。
+    Shapiro 在 n>5000 時官方不建議; 此處自動下採樣到 max_n。
     """
     x = x[~np.isnan(x)]
     if x.size == 0:
@@ -45,6 +45,7 @@ def _shapiro_p(x: np.ndarray, max_n: int = 5000, random_state: int = 42) -> floa
         rng = np.random.default_rng(random_state)
         x = rng.choice(x, size=max_n, replace=False)
     try:
+        # return statistics and p-value
         _, p = stats.shapiro(x)
     except Exception:
         p = np.nan
@@ -52,7 +53,10 @@ def _shapiro_p(x: np.ndarray, max_n: int = 5000, random_state: int = 42) -> floa
 
 
 def _dip_test(x: np.ndarray) -> Tuple[float, float]:
-    """Hartigan's Dip Test (statistic, p-value)。若未安裝 diptest，回傳 (NaN, NaN)。"""
+    """
+    Hartigan's Dip Test (statistic, p-value), 判斷形狀用(單峰或多峰)
+    若未安裝 diptest，回傳 (NaN, NaN)。
+    """
     x = x[~np.isnan(x)]
     if (not _HAS_DIPTEST) or (x.size < 3):
         return float("nan"), float("nan")
@@ -63,6 +67,29 @@ def _dip_test(x: np.ndarray) -> Tuple[float, float]:
         return float("nan"), float("nan")
 
 
+def _silverman_bw(x: np.ndarray) -> float:
+    """
+    Silverman’s rule-of-thumb bandwidth for 1D data (numeric).
+    Returns a positive float; falls back to a small span if data are nearly constant.
+    """
+    x = x[~np.isnan(x)]
+    n = x.size
+    if n < 2:
+        return 1.0  # arbitrary positive fallback
+
+    std = np.nanstd(x, ddof=1)
+    q75, q25 = np.nanpercentile(x, [75, 25])
+    iqr = q75 - q25
+    sigma = min(std, iqr / 1.34) if iqr > 0 else std
+    # Avoid zero bw when data are identical
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = std if std > 0 else 1.0
+    bw = 0.9 * sigma * (n ** (-1.0 / 5.0))
+    if not np.isfinite(bw) or bw <= 0:
+        bw = max(1e-3, (np.nanmax(x) - np.nanmin(x)) / (np.sqrt(n) + 1e-9))
+    return float(bw)
+
+
 def _kde_peaks(
     x: np.ndarray,
     bandwidth: Optional[float] = None,
@@ -71,49 +98,75 @@ def _kde_peaks(
 ) -> Tuple[List[float], Dict[str, Any]]:
     """
     使用 KDE 找出分佈主峰位置（以 x 軸單位回傳）。
-    - 預設使用 FFTKDE（若無 KDEpy，回退到 scipy.stats.gaussian_kde）。
-    - 可設定 peak_prominence 以過濾弱峰。
-
-    Returns
-    -------
-    peaks_x : List[float]
-        KDE 曲線主峰的 x 位置清單。
-    meta : Dict[str, Any]
-        內含 'grid_x', 'grid_y', 'peaks_idx', 'prominences' 等調試資訊。
+    - 優先用 KDEpy.FFTKDE（若可用），但需要數值 bw 與資料點嚴格包含於網格中；
+      若失敗則自動回退到 scipy.stats.gaussian_kde。
     """
     x = x[~np.isnan(x)]
     if x.size == 0:
         return [], {"grid_x": None, "grid_y": None, "peaks_idx": [], "prominences": []}
 
-    # 建立估計網格
     xmin, xmax = np.nanmin(x), np.nanmax(x)
     if xmin == xmax:
-        return [float(xmin)], {"grid_x": np.array([xmin]), "grid_y": np.array([1.0]), "peaks_idx": [0], "prominences": [1.0]}
+        # 單一點 → 單峰
+        return [float(xmin)], {
+            "grid_x": np.array([xmin]),
+            "grid_y": np.array([1.0]),
+            "peaks_idx": [0],
+            "prominences": [1.0],
+        }
 
-    grid_x = np.linspace(xmin, xmax, grid_size)
+    # --- 帶寬（數值化） ---
+    bw = float(bandwidth) if (bandwidth is not None) else _silverman_bw(x)
+    if not np.isfinite(bw) or bw <= 0:
+        bw = _silverman_bw(x)  # 再嘗試一次保守值
 
-    # KDE 估計曲線
+    # --- 評估網格：務必嚴格包住資料點 ---
+    data_range = xmax - xmin
+    pad = max(3.0 * bw, 1e-6 * max(1.0, data_range))
+    grid_min = xmin - pad
+    grid_max = xmax + pad
+    grid_x = np.linspace(grid_min, grid_max, grid_size)
+
+    # --- 計算 KDE 曲線 ---
+    def _find_peaks_on_curve(y: np.ndarray):
+        if peak_prominence is not None:
+            idx, props = signal.find_peaks(y, prominence=peak_prominence)
+            prominences = props.get("prominences", np.array([]))
+        else:
+            idx = signal.find_peaks(y)[0]
+            prominences = np.array([])
+        return idx, prominences
+
+    grid_y = None
+    used_backend = None
+
+    # 優先嘗試 KDEpy（若可用）
     if _HAS_KDEPY:
-        kde = FFTKDE(kernel="gaussian", bw=bandwidth or "silverman")
-        grid_y = kde.fit(x).evaluate(grid_x)
-    else:
-        kde = stats.gaussian_kde(x, bw_method=bandwidth or "silverman")
+        try:
+            kde = FFTKDE(kernel="gaussian", bw=bw)
+            grid_y = kde.fit(x).evaluate(grid_x)
+            used_backend = "kdepy"
+        except Exception:
+            grid_y = None
+
+    # 回退到 SciPy KDE
+    if grid_y is None:
+        kde = stats.gaussian_kde(x, bw_method=bw / np.nanstd(x, ddof=1) if np.nanstd(x, ddof=1) > 0 else "silverman")
         grid_y = kde(grid_x)
+        used_backend = "scipy"
 
-    # 尋找峰
-    if peak_prominence is not None:
-        peaks_idx, props = signal.find_peaks(grid_y, prominence=peak_prominence)
-        prominences = props.get("prominences", np.array([]))
-    else:
-        peaks_idx = signal.find_peaks(grid_y)[0]
-        prominences = np.array([])
-
+    # --- 尋找峰 ---
+    peaks_idx, prominences = _find_peaks_on_curve(grid_y)
     peaks_x = grid_x[peaks_idx].tolist()
+
     return peaks_x, {
         "grid_x": grid_x,
         "grid_y": grid_y,
         "peaks_idx": peaks_idx.tolist(),
         "prominences": prominences.tolist(),
+        "backend": used_backend,
+        "bw": bw,
+        "pad": pad,
     }
 
 

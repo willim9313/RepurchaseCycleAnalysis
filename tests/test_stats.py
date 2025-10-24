@@ -90,9 +90,9 @@ def test_analyze_distribution_basic_shape_and_types(df_intervals):
         assert len(row["kde_peaks"]) == row["n_kde_peaks"]
 
         # shapiro_p/dip_* 可能為 NaN（樣本數、平臺實作差異），但欄位需存在且為數值型態或 NaN
-        assert np.issubdtype(type(row["shapiro_p"]), (float, np.floating)) or pd.isna(row["shapiro_p"])
-        assert np.issubdtype(type(row["dip_stat"]), (float, np.floating)) or pd.isna(row["dip_stat"])
-        assert np.issubdtype(type(row["dip_p"]), (float, np.floating)) or pd.isna(row["dip_p"])
+        assert np.issubdtype(type(row["shapiro_p"]), np.floating) or pd.isna(row["shapiro_p"])
+        assert np.issubdtype(type(row["dip_stat"]), np.floating) or pd.isna(row["dip_stat"])
+        assert np.issubdtype(type(row["dip_p"]), np.floating) or pd.isna(row["dip_p"])
 
 
 def test_analyze_distribution_no_group(df_intervals):
