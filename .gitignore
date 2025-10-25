@@ -215,3 +215,7 @@ data/.DS_Store
 .gitignore
 data/raw/.DS_Store
 .DS_Store
+data/processed/interval_analysis_report.csv
+.gitignore
+data/raw/sample_retail_transactions.csv
+data/processed/interval_data.csv
