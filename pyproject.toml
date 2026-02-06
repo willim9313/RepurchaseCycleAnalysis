@@ -1,0 +1,24 @@
+[project]
+name = "repurchasecycleanalysis"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11.9"
+dependencies = [
+    "click>=8.3.0",
+    "diptest==0.10.0",
+    "duckdb>=1.4.1",
+    "kdepy==1.1.12",
+    "matplotlib>=3.10.7",
+    "numpy==2.3.3",
+    "pandas==2.3.3",
+    "polars==1.34.0",
+    "pytest==8.3.3",
+    "python-dateutil==2.9.0.post0",
+    "pyyaml>=6.0.3",
+    "scikit-learn==1.7.2",
+    "scipy==1.16.2",
+    "seaborn>=0.13.2",
+    "statsmodels==0.14.5",
+    "tqdm==4.67.1",
+]

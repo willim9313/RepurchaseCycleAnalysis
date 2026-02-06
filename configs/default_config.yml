@@ -1,0 +1,116 @@
+# configs/default_config.yml
+pipeline_controller:
+  auto_scale_by_data_size: true
+  data_size_thresholds:
+    small: 1e4
+    medium: 1e6
+  parallel_execution:          # currently not available
+    enabled: false
+    strategy: "per-category"   
+    n_jobs: 4                  
+  random_seed: 42
+  reports_path: "./reports"
+  logging:
+    level: "INFO"
+    save_path: "./logs"
+
+# ---- module-level configs ----
+
+modules:
+
+  interval_derivation: # 需要確認
+    uid_col: "UserId"
+    cat_col: "Category"
+    date_col: "OrderDate"
+    groupby_cols: ["UserId", "Category"]
+    keep_first_purchase: false
+    date_format: null
+    extra_cols: []
+    min_intervals_per_group: 2
+
+  data_cleaning:
+    remove_negatives: true
+    missing_strategy: "drop"      # or "impute_mean"
+    outlier_method: "IQR"         # "IQR", "MAD", "QUANTILE"
+    outlier_threshold: 1.5        # for IQR and MAD
+    quantile_bounds: [0.05, 0.95]  # for QUANTILE method
+    min_group_size_for_stats: 3   # fallback when group too small
+
+  transform:
+    method_candidates: ["log1p", "yeo_johnson", "none"]
+    auto_select_by_skewness: true
+    skew_threshold: 2.0
+
+  visualization:
+    sample_ratio: 0.05
+    kde_bandwidths: [0.3, 0.6, 1.0]
+    plot_types: ["raincloud"] # "hist_kde", "violin", "box", "cdf", "raincloud"
+    orient: "h"
+    palette: "Set2"
+    sigma: 0.2
+    data_hue: null
+    multi_category: false
+    base_plots_dir: "./plots"     # 實際會組成 {base}/{cat}/...
+
+  unimodality_test:
+    alpha: 0.05
+    max_sample_for_test: 10000
+    value_col: "interval_days_transformed"  # allow override if needed(not usually)
+    dip_bootstrap_samples: 200  # bootstrap related configs(small/medium data)
+    # If want to control which methods to use per mode in future, can add:
+    methods_by_mode:
+      small: ["dip", "silverman"]
+      medium: ["dip_subsampled", "silverman"]
+      large: ["kde_extrema", "smoothness_emd"]
+    
+    # Silverman test parameters
+    silverman_grid_size: 512
+    silverman_search_iters: 30     # binary search steps for critical bandwidth
+    silverman_bootstrap_samples: 200
+
+    # Smoothness/EMD heuristic parameters
+    emd_bootstrap_samples: 200
+    emd_sample_size: 4000          # for approximating gaussian null distribution
+    check_flat_distribution: true
+    flat_kurtosis_threshold: -1.0  # uniform kurtosis ≈ -1.2
+    flat_cv_threshold: 0.6   
+
+  peak_detection:
+    # shared thresholds
+    prominence_min: 0.015  # 0.005
+    height_min: 0.001      #0.001
+    grid_size: 512
+
+    # bandwidth split (fix semantics across modes)
+    kde_bandwidth_factor: 0.3   # scipy gaussian_kde bw_method factor (small)
+    kde_bandwidth: 0.05          # KDEpy FFTKDE bw (medium/large, unit = x)
+    meanshift_bandwidth: 0.1    # MeanShift bandwidth (large, unit = x)
+
+    # medium/large: argrelmax order (B: auto)
+    argrelmax_order: 3       # null => auto: max(3, grid_size // 100)
+
+    # large: density filter strategy
+    large_density_filter: "quantile"   # or "height_min"
+    large_density_quantile: 0.60
+
+  modality_quantification:
+    k_range: [1, 6]
+    selection_metric: "BIC"
+    subsample_size: 20000
+    max_iter: 500
+    n_init: 5
+    kde_grid_size: 512
+    dp_weight_threshold: 0.05
+
+  stability_assessment:
+    n_bootstrap: 100
+    sample_fraction: 0.8
+    support_threshold: 0.6
+    value_col: "interval_days_transformed"
+    match_tol: None  # auto-determined
+    grid_size: 512
+
+  reporting:
+    export_formats: ["json", "pdf", "png"]  # currently supports "json" only
+    provide_details: true
+    separate_category_report: true  # whether provide per-category reports
